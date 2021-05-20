@@ -102,7 +102,7 @@ void pause(void);//게임을 일시정지시킴
 void shadow_block(void);
 void delete_sblock(void);
 void game_over(void); //**
-void game_clear(void);
+void game_clear(void); //**
 // void music(void);
 
 void gotoxy(int x, int y) { //gotoxy함수 
