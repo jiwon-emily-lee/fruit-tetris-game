@@ -5,6 +5,7 @@
 #include<conio.h>
 #include<time.h>
 #include<stdlib.h>
+#include<stdbool.h>
 #include<mmsystem.h>
 #pragma comment(lib,"winmm.lib")
 
@@ -16,6 +17,7 @@
 #define p 112 //일시정지 
 #define P 80 //일시정지
 #define ESC 27 //게임종료 
+#define ENTER 13 //선택(엔터키)
 
 #define false 0
 #define true 1
@@ -32,11 +34,38 @@
 #define MAIN_X_ADJ 15 //게임판 위치조정 
 #define MAIN_Y_ADJ 1 //게임판 위치조정 
 
+#define DEFAULT_FONT_COLOR LIGHT_WHITE
+
+#define BLACK SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE),0);
+#define NAVY SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE),1);
+#define GREEN SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE),2);
+#define BLUEGREEN SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE),3);
+#define ORANGE SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE),4);
+#define VIOLET SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE),5);
+#define GOLD SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE),6);
+#define ORIGINAL SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE),7);
+#define GRAY SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE),8);
+#define BLUE SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE),9);
+#define YELLOWGREEN SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE),10);
+#define SKYBLUE SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE),11);
+#define RED SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE),12);
+#define PINK SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE),13);
+#define YELLOW SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE),14);
+#define WHITE SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE),15);
+
+#define CIN GetStdHandle(STD_INPUT_HANDLE)
+#define COUT GetStdHandle(STD_OUTPUT_HANDLE)
+
+#define MapRow 23
+#define MapCol 12
+#define PORT 9000
+
 #define STATUS_X_ADJ 2 //게임정보표시 위치조정 
 
 int STATUS_Y_GOAL; //GOAL 정보표시위치Y 좌표 저장 
 int STATUS_Y_LEVEL; //LEVEL 정보표시위치Y 좌표 저장
 int STATUS_Y_SCORE; //SCORE 정보표시위치Y 좌표 저장
+int STATUS_Y_FRUIT; //과일 개수 정보표시위치Y 좌표 저장
 
 int blocks[7][4][4][4] = {
 {{0,0,0,0,0,1,1,0,0,1,1,0,0,0,0,0},{0,0,0,0,0,1,1,0,0,1,1,0,0,0,0,0},
@@ -61,6 +90,12 @@ int b_type_next; //다음 블록값 저장
 int randcolor = 7; //현재 블록 색깔 저장
 int randcolor_next; //다음 블록 색깔 저장
 int inactive_color = 7; //굳은 블록 색깔
+int y = 3;
+int pay = 0;
+int fruit1 = 0;
+int fruit2 = 0;
+int fruit3 = 0;
+int fruit4 = 0;
 
 int main_org[MAIN_Y][MAIN_X]; //게임판의 정보를 저장하는 배열 모니터에 표시후에 main_cpy로 복사됨 
 int main_cpy[MAIN_Y][MAIN_X]; //즉 maincpy는 게임판이 모니터에 표시되기 전의 정보를 가지고 있음 
@@ -101,9 +136,33 @@ void check_game_over(void); //게임오버인지 판단하고 게임오버를 �
 void pause(void);//게임을 일시정지시킴
 void shadow_block(void);
 void delete_sblock(void);
+void score_window(void);//점수 계산 창
+void buy_fruit(void); // 과일 구매 계산
 void game_over(void); //**
-void game_clear(void); //**
+void game_clear(void);
+void game_option(void);//***
 // void music(void);
+INPUT_RECORD rec;
+DWORD dwNOER;
+POINT Point;
+WSADATA Wsa;
+SOCKET Server_Socket, Client_Socket, Other_Socket;
+SOCKADDR_IN Server_Addr, Client_Addr;
+int Client_Addr_Size;
+volatile bool SendHappen = false, ReceiveHappen = false, GarbageHappen = false;
+volatile bool Mouse_LeftButton = false, Multi = false;
+volatile bool SaveHappen = false, LoadHappen = false, ResumeHappen = false, MenuHappen = false;
+volatile bool EnterRoomHappen = false, ChangeHappen = false, ExitHappen = false;
+volatile bool AcceptHappen = false, ErrorHappen = false, ListenHappen = false;
+CONSOLE_CURSOR_INFO CursorInfo = { 1,false };
+HANDLE MouseThread, TransmitThread, ClientThread, ServerThread, AcceptThread, MultiThread;
+// void music(void);
+
+/////////////////////////////////////////게임정보화면//////////////////////////
+
+
+/////////////////////////////////////////////////////////////
+
 
 void gotoxy(int x, int y) { //gotoxy함수 
     COORD pos = { 2 * x,y };
@@ -141,12 +200,13 @@ void setcursortype(CURSOR_TYPE c) { //커서숨기는 함수
 int main() {
     int i;
 
-    system("mode con:cols=100 lines=30"); //콘솔창 크기 설정 //**
+    system("mode con:cols=100 lines=30"); //콘솔창 크기 설정
     srand((unsigned)time(NULL)); //난수표생성 
     setcursortype(NOCURSOR); //커서 없앰 
     title(); //메인타이틀 호출 
-    story();
-    game_clear();
+    //story();
+    game_option();//***
+    //game_clear();
     reset(); //게임판 리셋 
     best_score = 0;
     //PlaySound(TEXT("tetris.wav"), NULL, SND_FILENAME | SND_ASYNC | SND_LOOP);
@@ -169,6 +229,7 @@ int main() {
         check_level_up(); // 레벨업을 체크 
         check_game_over(); //게임오버를 체크 
         if (new_block_on == 1) new_block(); // 뉴 블럭 flag가 있는 경우 새로운 블럭 생성 
+
     }
     PlaySound(NULL, 0, 0);
 }
@@ -179,87 +240,70 @@ void title(void) {
     int x = 5; //타이틀화면이 표시되는 x좌표 
     int y = 4; //타이틀화면이 표시되는 y좌표 
     int cnt; //타이틀 프레임을 세는 변수  
-    for (int i = 0; i < 8; i++) {
-        SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), i);
+    Mouse_LeftButton = false;
+    setcursortype(NOCURSOR);
 
-        gotoxy(x, y + 0); printf("▣▣▣▣▣▣▣▣▣▣▣▣▣▣▣▣▣▣▣▣▣▣▣▣▣▣▣▣▣▣"); Sleep(5);
-        gotoxy(x, y + 1); printf("▣  ■■■■      ■■■■        ■■■         ■■■   ▣"); Sleep(5);
-        gotoxy(x, y + 2); printf("▣     ■            ■           ■   ■       ■        ▣"); Sleep(5);
-        gotoxy(x, y + 3); printf("▣     ■   ■■■   ■   ■■■  ■■■    ■   ■■■   ▣"); Sleep(5);
-        gotoxy(x, y + 4); printf("▣     ■   ■       ■   ■      ■   ■   ■        ■  ▣"); Sleep(5);
-        gotoxy(x, y + 5); printf("▣     ■   ■■■   ■   ■■■  ■    ■  ■   ■■■   ▣"); Sleep(5);
-        gotoxy(x, y + 6); printf("▣          ■            ■                ■            ▣"); Sleep(5);
-        gotoxy(x, y + 7); printf("▣          ■■■        ■■■            ■            ▣"); Sleep(5);
-        gotoxy(x, y + 8); printf("▣▣▣▣▣▣▣▣▣▣▣▣▣▣▣▣▣▣▣▣▣▣▣▣▣▣▣▣▣▣"); Sleep(5);
+    SetConsoleTextAttribute(GetStdHandle(STD_INPUT_HANDLE), ENABLE_MOUSE_INPUT);
+    system("mode con cols=100 lines=38 | title 5조)Fruit Tetris");
+
+    int i, j;
+
+    char* Menu[10][6] = {
+    { "■■■■■■ ", "■■■■■■ "," ■■■■■■ ","■■■■■    ",  "  ■■ ",  "    ■■■■" },
+    { "■■■■■■ ", "■■■■■■  ","■■■■■■ ","■■   ■■   ",  "  ■■ ",  "  ■■■■■" },
+    { "    ■■     ", "■■         ","     ■■     ","■■    ■■       ","","  ■■" },
+    { "    ■■     ", "■■   ","           ■■     ","■■   ■■   ",  "  ■■ ","  ■■" },
+    { "    ■■     ", "■■■■■■     "," ■■     ","■■■■■     ", " ■■ "," ■■■■ " },
+    { "    ■■     ", "■■■■■■   ","   ■■     ","■■ ■■     ",  "  ■■ ","   ■■■■ " },
+    { "    ■■     ", "■■         ","     ■■     ","■■   ■■   ",  "  ■■ ","        ■■" },
+    { "    ■■     ", "■■         ","     ■■     ","■■    ■■ ",   "   ■■ ","         ■■" },
+    { "    ■■     ", "■■■■■■   ","   ■■     ","■■      ■■ ", " ■■ "," ■■■■■" },
+    { "    ■■     ", "■■■■■■ ","     ■■     ","■■       ■■", " ■■","  ■■■■" },
+    };
+
+    gotoxy(x + 12, y + 14); printf("▶ Press any key to start ◀");
+
+    for (i = 0; i < 10; i++) {
+        gotoxy(x, y + i);
+        for (j = 0; j < 6; j++) {
+            switch (j) {
+            case 0:
+                RED
+                    break;
+            case 1:
+                ORANGE
+                    break;
+            case 2:
+                YELLOW
+                    break;
+            case 3:
+                GREEN
+                    break;
+            case 4:
+                SKYBLUE
+                    break;
+            case 5:
+                VIOLET
+                    break;
+            }
+            printf("%s", Menu[i][j]);
+        }
     }
 
-
-    gotoxy(x + 4, y + 10); printf("☆ Press any key to start ☆");
-
-
-    textcolor(0x000E);
     for (cnt = 0;; cnt++) { //cnt를 1씩 증가시키면서 계속 반복   
-        if (_kbhit()) break; //키입력이 있으면 무한루프 종료
-        // ㄱ 모양
-        if (cnt % 200 == 0) {
-            gotoxy(x + 4, y + 3); printf("□");
-            gotoxy(x + 5, y + 3); printf("□");
-            gotoxy(x + 4, y + 4); printf("□");
-            gotoxy(x + 4, y + 5); printf("□");
-        }
-        if ((cnt % 200 - 100) == 0) {
-            gotoxy(x + 4, y + 3); printf("■");
-            gotoxy(x + 5, y + 3); printf("■");
-            gotoxy(x + 4, y + 4); printf("■");
-            gotoxy(x + 4, y + 5); printf("■");
-        }
-        // ㄹ 모양
-        if (cnt % 350 == 0) {
-            gotoxy(x + 14, y + 3); printf("□");
-            gotoxy(x + 13, y + 4); printf("□");
-            gotoxy(x + 14, y + 4); printf("□");
-            gotoxy(x + 13, y + 5); printf("□");
-        }
-        if ((cnt % 350 - 100) == 0) {
-            gotoxy(x + 14, y + 3); printf("■");
-            gotoxy(x + 13, y + 4); printf("■");
-            gotoxy(x + 14, y + 4); printf("■");
-            gotoxy(x + 13, y + 5); printf("■");
-
-        }
-        // ㅜ 모양
-        if (cnt % 250 == 0) {
-            gotoxy(x + 8, y); printf("□");
-            gotoxy(x + 9, y); printf("□");
-            gotoxy(x + 10, y); printf("□");
-            gotoxy(x + 9, y + 1); printf("□");
-        }
-        if ((cnt % 250 - 100) == 0) {
-            gotoxy(x + 8, y); printf("■");
-            gotoxy(x + 9, y); printf("■");
-            gotoxy(x + 10, y); printf("■");
-            gotoxy(x + 9, y + 1); printf("■");
-        }
-        // ㅡ 모양
-        if (cnt % 300 == 0) {
-            gotoxy(x + 18, y + 6); printf("□");
-            gotoxy(x + 19, y + 6); printf("□");
-            gotoxy(x + 20, y + 6); printf("□");
-            gotoxy(x + 21, y + 6); printf("□");
-        }
-        if ((cnt % 300 - 100) == 0) {
-            gotoxy(x + 18, y + 6); printf("■");
-            gotoxy(x + 19, y + 6); printf("■");
-            gotoxy(x + 20, y + 6); printf("■");
-            gotoxy(x + 21, y + 6); printf("■");
-
-        }
-        Sleep(10); // 00.1초 딜레이  
+        if (_kbhit()) break;//키입력이 있으면 무한루프 종료
     }
+
     textcolor(7);
     while (_kbhit()) _getch(); //버퍼에 기록된 키값을 버림 
-
 }
+
+////////////////////////추ㅜ가된 부분//////////////////////////////
+
+
+/////////////////////////////////////////////////////////////////////////
+
+
 
 /// 클리어 ///////////////////////////////////////////////////////////////////**
 
@@ -270,7 +314,7 @@ void game_clear(void) {
     int y = 4;
     int cnt;
 
-    textcolor(11); 
+    textcolor(11);
     for (int j = 20; j >= 5; j--)
     {
         gotoxy(x + 25, y + j); printf(" | ㄱ ㄱ ㄱ ㄱ ㄱ ㄱ |");
@@ -330,11 +374,11 @@ void story(void) {
 
     textcolor(7); //스토리
     gotoxy(x + 1, y + 2); printf("202X년 X월 X일…");
-    Sleep(80);
+    Sleep(800);
     gotoxy(x + 1, y + 4); printf("일어나보니 나의 주식과 비트코인은 전부 휴지 조각이 되어 있었다…");
-    Sleep(180);
+    Sleep(1800);
     gotoxy(x + 1, y + 6); printf("이렇게 된 이상 과일장수로 새 삶을 시작해보려 한다…!");
-    Sleep(180);
+    Sleep(1800);
 
     textcolor(3); //게임 방법
     gotoxy(x + 1, y + 12); printf("---------------------------------------------");
@@ -368,6 +412,8 @@ void story(void) {
 
 
 
+
+
 /// 초기화 /////////////////////////////////////////////////////////////////////////////
 
 void reset(void) {
@@ -381,6 +427,11 @@ void reset(void) {
 
     level = 1; //각종변수 초기화 
     score = 0;
+    pay = -300;
+    fruit1 = 0;
+    fruit2 = 0;
+    fruit3 = 0;
+    fruit4 = -1;
     level_goal = 1000;
     key = 0;
     crush_on = 0;
@@ -394,7 +445,10 @@ void reset(void) {
 
     b_type_next = rand() % 7; //다음번에 나올 블록 종류를 랜덤하게 생성 
     new_block(); //새로운 블록을 하나 만듦  
-    randcolor = rand() % (9 + 1 - 1) + 1; //현재 블록 색깔 저장 1-9
+    randcolor = rand() % (4 + 1 - 1) + 1; //현재 블록 색깔 저장 1-4
+    buy_fruit();
+
+
 
 }
 
@@ -441,9 +495,12 @@ void draw_map(void) { //게임 상태 표시를 나타내는 함수
     gotoxy(STATUS_X_ADJ + MAIN_X + MAIN_X_ADJ, y + 5); printf("              ");
     gotoxy(STATUS_X_ADJ + MAIN_X + MAIN_X_ADJ, y + 6); printf("              ");
     gotoxy(STATUS_X_ADJ + MAIN_X + MAIN_X_ADJ, y + 7); printf("┗           ┛ ");
-    gotoxy(STATUS_X_ADJ + MAIN_X + MAIN_X_ADJ, STATUS_Y_SCORE = y + 10); printf("[ YOUR SCORE ] %6d", score);
-    gotoxy(STATUS_X_ADJ + MAIN_X + MAIN_X_ADJ, y + 12); printf("[ LAST SCORE ] %6d", last_score);
-    gotoxy(STATUS_X_ADJ + MAIN_X + MAIN_X_ADJ, y + 14); printf("[ BEST SCORE ] % 6d", best_score);
+    gotoxy(STATUS_X_ADJ + MAIN_X + MAIN_X_ADJ, STATUS_Y_SCORE = y + 10); printf("[   오늘 매출    ] %6d", score);
+    gotoxy(STATUS_X_ADJ + MAIN_X + MAIN_X_ADJ, y + 12); printf("[   매출 원가    ] %6d", pay); //점수 표시
+    gotoxy(STATUS_X_ADJ + MAIN_X + MAIN_X_ADJ, STATUS_Y_FRUIT = y + 14); printf("[ 구매한 포도 수 ] %6d", fruit1); //포도 가격 100원
+    gotoxy(STATUS_X_ADJ + MAIN_X + MAIN_X_ADJ, STATUS_Y_FRUIT + 2); printf("[ 구매한 키위 수 ] %6d", fruit2); // 키위 가격 200원
+    gotoxy(STATUS_X_ADJ + MAIN_X + MAIN_X_ADJ, STATUS_Y_FRUIT + 4); printf("[ 구매한 메론 수 ] %6d", fruit3); //메론 가격 500원
+    gotoxy(STATUS_X_ADJ + MAIN_X + MAIN_X_ADJ, STATUS_Y_FRUIT + 6); printf("[ 구매한 딸기 수 ] %6d", fruit4); // 딸기 가격 300원
     gotoxy(STATUS_X_ADJ, y + 9); printf("---------------------");
     gotoxy(STATUS_X_ADJ, y + 11); printf("  △   :      Rotate");
     gotoxy(STATUS_X_ADJ, y + 12); printf("◁  ▷ : Left / Right");
@@ -511,11 +568,11 @@ void new_block(void) { //새로운 블록 생성
     b_type_next = rand() % 7; //다음 블럭을 만듦 
     inactive_color = randcolor;//굳은 블록 색깔
     randcolor = randcolor_next; //움직이는 블록 색깔
-    randcolor_next = rand() % (9 + 1 - 1) + 1; //다음 블록 색깔
+    randcolor_next = rand() % (4 + 1 - 1) + 1; //다음 블록 색깔
     b_rotation = 0;  //회전은 0번으로 가져옴 
 
     new_block_on = 0; //new_block flag를 끔  
-
+    buy_fruit();
     for (i = 0; i < 4; i++) { //게임판 bx, by위치에 블럭생성  
         for (j = 0; j < 4; j++) {
             if (blocks[b_type][b_rotation][i][j] == 1) main_org[by + i][bx + j] = ACTIVE_BLOCK;
@@ -569,8 +626,7 @@ void check_key(void) {
                 space_key_on = 1; //스페이스키 flag를 띄움 
                 while (crush_on == 0) { //바닥에 닿을때까지 이동시킴 
                     drop_block();
-                    score += level; // hard drop 보너스
-                    gotoxy(STATUS_X_ADJ + MAIN_X + MAIN_X_ADJ, STATUS_Y_SCORE); printf("[ YOUR SCORE ] %6d", score); //점수 표시  
+                    gotoxy(STATUS_X_ADJ + MAIN_X + MAIN_X_ADJ, STATUS_Y_SCORE = y + 10); printf("[   오늘 매출    ] %6d", score); //점수 표시  
                 }
                 break;
             case P: //P(대문자) 눌렀을때 
@@ -580,6 +636,7 @@ void check_key(void) {
             case ESC: //ESC눌렀을때 
                 system("cls"); //화면을 지우고 
                 exit(0); //게임종료 
+
             }
         }
     }
@@ -701,18 +758,21 @@ void move_block(int dir) { //블록을 이동시킴
 
 void check_line(void) {
     int i, j, k, l;
-
-    int    block_amount; //한줄의 블록갯수를 저장하는 변수 
+    int block_amount; //한줄의 블록갯수를 저장하는 변수 
     int combo = 0; //콤보갯수 저장하는 변수 지정및 초기화 
 
     for (i = MAIN_Y - 2; i > 3;) { //i=MAIN_Y-2 : 밑쪽벽의 윗칸부터,  i>3 : 천장(3)아래까지 검사 
         block_amount = 0; //블록갯수 저장 변수 초기화 
         for (j = 1; j < MAIN_X - 1; j++) { //벽과 벽사이의 블록갯루를 셈 
-            if (main_org[i][j] > 0) block_amount++;
+            if (main_org[i][j] > 0) {
+                block_amount++;
+
+            }
         }
         if (block_amount == MAIN_X - 2) { //블록이 가득 찬 경우 
             if (level_up_on == 0) { //레벨업상태가 아닌 경우에(레벨업이 되면 자동 줄삭제가 있음) 
-                score += 100 * level; //점수추가 
+                score += 1000 * level; //점수추가 
+                gotoxy(STATUS_X_ADJ + MAIN_X + MAIN_X_ADJ, STATUS_Y_SCORE = y + 10); printf("[   오늘 매출    ] %6d", score); //점수 표시
                 cnt++; //지운 줄 갯수 카운트 증가 
                 combo++; //콤보수 증가  
             }
@@ -730,7 +790,8 @@ void check_line(void) {
         if (combo > 1) { //2콤보이상인 경우 경우 보너스및 메세지를 게임판에 띄웠다가 지움 
             gotoxy(MAIN_X_ADJ + (MAIN_X / 2) - 1, MAIN_Y_ADJ + by - 2); printf("%d COMBO!", combo);
             Sleep(500);
-            score += (combo * level * 100);
+            score += (combo * level * 1000);
+            gotoxy(STATUS_X_ADJ + MAIN_X + MAIN_X_ADJ, STATUS_Y_SCORE = y + 10); printf("[   오늘 매출    ] %6d", score); //점수 표시
             reset_main_cpy(); //텍스트를 지우기 위해 main_cpy을 초기화.
 //(main_cpy와 main_org가 전부 다르므로 다음번 draw()호출시 게임판 전체를 새로 그리게 됨) 
         }
@@ -828,10 +889,13 @@ void check_game_over(void) { //**
                 Sleep(30);
             }
             game_over();
-
+            system("cls");
+            score_window();
             while (_kbhit()) _getch();
             key = _getch();
             reset();
+            //PlaySound(NULL, 0, 0);
+            //PlaySound(TEXT("tetris.wav"), NULL, SND_FILENAME | SND_ASYNC | SND_LOOP);
             //PlaySound(NULL, 0, 0);
             //PlaySound(TEXT("tetris.wav"), NULL, SND_FILENAME | SND_ASYNC | SND_LOOP);
         }
@@ -862,21 +926,39 @@ void pause(void) { //게임 일시정지 함수
     draw_main();
     draw_map();
 
-    for (i = 1; i < 3; i++) { // 다음블록 그림 
+    for (i = 1; i < 3; i++) { //게임상태표시에 다음에 나올블럭을 그림 
         for (j = 0; j < 4; j++) {
             if (blocks[b_type_next][0][i][j] == 1) {
-                gotoxy(MAIN_X + MAIN_X_ADJ + 3 + j, i + 6);
+                gotoxy(STATUS_X_ADJ + MAIN_X + MAIN_X_ADJ + 2 + j, i + 6);
+                textcolor(randcolor_next);
                 printf("■");
+                textcolor(7);
             }
             else {
-                gotoxy(MAIN_X + MAIN_X_ADJ + 3 + j, i + 6);
+                gotoxy(STATUS_X_ADJ + MAIN_X + MAIN_X_ADJ + 2 + j, i + 6);
                 printf("  ");
             }
         }
     }
-}
+    if (randcolor == 1) {
+        fruit1--;
+        pay -= 100;
+    }
+    else if (randcolor == 2) {
+        fruit2--;
+        pay -= 200;
+    }
+    else if (randcolor == 3) {
+        fruit3--;
+        pay -= 500;
+    }
+    else {
+        fruit4--;
+        pay -= 300;
+    }
+    buy_fruit();
 
-/// 게임오버 ///////////////////////////////////////////////////////////////////
+}
 
 void game_over(void) {
 
@@ -921,8 +1003,6 @@ void game_over(void) {
     }
 }
 
-/// 쉐도우 블록 ///////////////////////////////////////////////////////////////////
-
 
 void shadow_block(void) // 쉐도우 블록
 {
@@ -930,8 +1010,6 @@ void shadow_block(void) // 쉐도우 블록
     while (1)
     {
         if (check_crush(bx, shadowY + 1, b_rotation) == true)
-            ++shadowY;
-        if (by >= shadowY)
             ++shadowY;
         if (check_crush(bx, shadowY + 1, b_rotation) == false)
         {
@@ -951,9 +1029,9 @@ void shadow_block(void) // 쉐도우 블록
     return;
 }
 
-void delete_sblock(void) //쉐도우 블록 삭제
+void delete_sblock(void)
 {
-    for (int i = 0; i < MAIN_Y - 1; i++) { 
+    for (int i = 0; i < MAIN_Y - 1; i++) { //delete
         for (int j = 0; j < MAIN_X - 1; j++) {
             if (main_org[i][j] == SBLOCK)
             {
@@ -962,4 +1040,102 @@ void delete_sblock(void) //쉐도우 블록 삭제
         }
     }
     return;
+}
+
+void score_window(void)
+{
+    int y = 3;
+    int final_score = 0;
+    final_score = score - pay;
+    gotoxy(MAIN_X_ADJ + 1, MAIN_Y_ADJ + 11); printf("[   오늘 번 돈    ] %6d원", score);
+
+    gotoxy(MAIN_X_ADJ + 1, MAIN_Y_ADJ + 12); printf("[    매출 원가    ] %6d", pay);
+    gotoxy(MAIN_X_ADJ + 1, MAIN_Y_ADJ + 13); printf("[      순수익     ] %6d", final_score);
+    gotoxy(MAIN_X_ADJ + 1, MAIN_Y_ADJ + 14); printf("    Press any key   ");
+    gotoxy(MAIN_X_ADJ + 1, MAIN_Y_ADJ + 15); printf("    to restart..    ");
+    gotoxy(MAIN_X_ADJ + 1, MAIN_Y_ADJ + 16); printf("                    ");
+}
+
+void buy_fruit(void)
+{
+    if (randcolor == 1) {
+        fruit1++;
+        gotoxy(STATUS_X_ADJ + MAIN_X + MAIN_X_ADJ, STATUS_Y_FRUIT); printf("[ 구매한 포도 수 ] %6d", fruit1);
+        pay += 100;
+        gotoxy(STATUS_X_ADJ + MAIN_X + MAIN_X_ADJ, y + 12); printf("[   매출 원가    ] %6d", pay);
+
+    }
+    else if (randcolor == 2) {
+        fruit2++;
+        gotoxy(STATUS_X_ADJ + MAIN_X + MAIN_X_ADJ, STATUS_Y_FRUIT + 2); printf("[ 구매한 키위 수 ] %6d", fruit2);
+        pay += 200;
+        gotoxy(STATUS_X_ADJ + MAIN_X + MAIN_X_ADJ, y + 12); printf("[   매출 원가    ] %6d", pay);
+    }
+    else if (randcolor == 3) {
+        fruit3++;
+        gotoxy(STATUS_X_ADJ + MAIN_X + MAIN_X_ADJ, STATUS_Y_FRUIT + 4); printf("[ 구매한 메론 수 ] %6d", fruit3);
+        pay += 500;
+        gotoxy(STATUS_X_ADJ + MAIN_X + MAIN_X_ADJ, y + 12); printf("[   매출 원가    ] %6d", pay);
+    }
+    else {
+        fruit4++;
+        gotoxy(STATUS_X_ADJ + MAIN_X + MAIN_X_ADJ, STATUS_Y_FRUIT + 6); printf("[ 구매한 딸기 수 ] %6d", fruit4);
+        pay += 300;
+        gotoxy(STATUS_X_ADJ + MAIN_X + MAIN_X_ADJ, y + 12); printf("[   매출 원가    ] %6d", pay);
+    }
+}
+
+void game_option(void) //***
+{
+    system("cls");
+    int x = 15;
+    int y = 13;
+    int cnt = 1;
+
+    textcolor(7);
+    gotoxy(x, y - 3); printf("▤▤▤▤▤▤▤▤▤▤▤▤▤▤");
+
+    gotoxy(x + 5, y); printf("> 재시작");
+
+    gotoxy(x + 6, y + 2); printf("종료");
+    
+    gotoxy(x, y + 5); printf("▤▤▤▤▤▤▤▤▤▤▤▤▤▤");
+
+    while(cnt) //cnt를 1씩 증가시키면서 계속 반복   
+    {
+        if (_kbhit()) { //키입력이 있는 경우  
+            key = _getch(); //키값을 받음
+            if (key == 224) { //방향키인경우 
+                do { key = _getch(); } while (key == 224);//방향키지시값을 버림 
+                switch (key) {
+                case DOWN: //아래쪽 방향키 눌렀을때
+                    if (y == 13) {
+                        gotoxy(x + 5, y); printf(" ");
+                        y = 15;
+                        gotoxy(x + 5, y); printf(">");
+                    }
+                    break;
+                case UP: //위쪽 방향키 눌렀을때 
+                    if (y == 15) {
+                        gotoxy(x + 5, y); printf(" ");
+                        y = 13;
+                        gotoxy(x + 5, y); printf(">");
+                    }
+                    break;
+                }                   
+            }
+        }
+        else if (key == ENTER) { // 엔터키 눌렀을 때
+            if (y == 13) {
+                reset(); //재시작
+                cnt = 0; //반복문 종료
+            }
+            else if (y == 15) {
+                system("cls"); //화면을 지우고 
+                exit(0); //게임종료 
+            }
+        }
+        while (_kbhit()) _getch(); //키버퍼를 비움 
+    }
+
 }
