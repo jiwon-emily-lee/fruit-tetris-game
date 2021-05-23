@@ -205,7 +205,7 @@ int main() {
     setcursortype(NOCURSOR); //커서 없앰 
     title(); //메인타이틀 호출 
     //story();
-    game_option();//***
+    game_option();
     //game_clear();
     reset(); //게임판 리셋 
     best_score = 0;
