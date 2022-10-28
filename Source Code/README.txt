@@ -1,1 +1,1 @@
-source code folder
+sample source code folder
